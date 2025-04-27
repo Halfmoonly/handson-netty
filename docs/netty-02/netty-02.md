@@ -479,14 +479,32 @@ private void select() throws IOException {
     }
 ```
 
-当然，接下来的一切就更加顺理成章了。执行完任务队列中的所有任务，新线程在 while 循环中又会来到 select方法内，但这次，selector 已经被 socketChannel 注册了，如果客户端已经向服务端发送了一条消息，就会检测到 IO 事件，即便任务队列中没有任务，也会跳出循环
-
 ### NIO逻辑processSelectedKeys
 
-接着向下执行到 processSelectedKeys(selector.selectedKeys()) 方法中。之后的代码我们已经写了很多次了吧，这次只不过对其封装了一下，换了个名字，核心一点也没有变。所以我们直接来到最后这一步。
+当然，接下来的一切就更加顺理成章了。执行完任务队列中的所有任务，新线程在 while 循环中又会来到 select方法内，
+
+但这次，selector 已经被 socketChannel 注册了，客户端会向服务端发送了一条消息，服务端就会检测到 IO 事件（Read），即便任务队列中没有任务，也会跳出循环
+
+接着向下执行到 processSelectedKeys(selector.selectedKeys()) 。这段代码我们已经写了很多次了吧，服务端在迭代器中处理客户端发送过来的消息，视为read事件
 
 ```java
-private void processSelectedKey(SelectionKey k) throws IOException {
+    private void processSelectedKeys(Set<SelectionKey> selectedKeys) throws IOException {
+        if (selectedKeys.isEmpty()) {
+            return;
+        }
+        Iterator<SelectionKey> i = selectedKeys.iterator();
+        for (;;) {
+            final SelectionKey k = i.next();
+            i.remove();
+            //处理就绪事件
+            processSelectedKey(k);
+            if (!i.hasNext()) {
+                break;
+            }
+        }
+    }
+
+    private void processSelectedKey(SelectionKey k) throws IOException {
             //如果是读事件
             if (k.isReadable()) {
                 SocketChannel channel = (SocketChannel)k.channel();
