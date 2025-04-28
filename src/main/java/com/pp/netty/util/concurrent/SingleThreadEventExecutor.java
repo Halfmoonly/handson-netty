@@ -69,7 +69,9 @@ public abstract class SingleThreadEventExecutor implements Executor {
 
     /**
      * @Author: PP-jessica
-     * @Description:执行器执行任务
+     * @Description:执行器执行任务, 因为单线程既要负责注册事件，又要负责处理IO(Read)，不可能同时进行
+     *
+     * 因此，只要有任务到来，统一放入阻塞队列，先进先出，后期逐个取出执行
      */
     @Override
     public void execute(Runnable task) {
@@ -114,7 +116,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
                     thread.interrupt();
                 }
                 //线程开始轮询处理IO事件，父类中的关键字this代表的是子类对象，这里调用的是nioeventloop中的run方法
-                SingleThreadEventExecutor.this.run();
+                SingleThreadEventExecutor.this.run();//回应NIO中得轮询while(true)
                 logger.info("单线程执行器的线程错误结束了！");
             }
         });
