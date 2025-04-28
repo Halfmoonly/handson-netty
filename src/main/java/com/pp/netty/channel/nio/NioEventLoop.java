@@ -86,7 +86,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
     protected void run() {
         for (;;) {
             try {
-                //没有事件就阻塞在这里
+                //没有事件就阻塞在这里，回应NIO中得while(iterator.hasNext())
                 select();
                 //如果有事件,就处理就绪事件
                 processSelectedKeys();

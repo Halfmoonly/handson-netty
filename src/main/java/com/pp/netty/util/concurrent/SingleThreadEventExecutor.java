@@ -114,7 +114,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
                     thread.interrupt();
                 }
                 //线程开始轮询处理IO事件，父类中的关键字this代表的是子类对象，这里调用的是nioeventloop中的run方法
-                SingleThreadEventExecutor.this.run();
+                SingleThreadEventExecutor.this.run();//回应NIO中得轮询while(true)
                 logger.info("单线程执行器的线程错误结束了！");
             }
         });
