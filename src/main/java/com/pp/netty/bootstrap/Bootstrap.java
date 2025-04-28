@@ -40,9 +40,9 @@ public class Bootstrap {
     }
 
     private void doConnect(SocketAddress localAddress) {
-        //注册任务先提交: 重载方法register(SocketChannel channel,NioEventLoop nioEventLoop)
+        //先注册事件并把轮询线程跑起来: 重载方法register(SocketChannel channel,NioEventLoop nioEventLoop)
         nioEventLoop.register(socketChannel,this.nioEventLoop);
-        //然后再提交连接服务器任务
+        //客户端后绑定连接，这时候执行器的线程已经启动了
         doConnect0(localAddress);
     }
 
