@@ -69,7 +69,9 @@ public abstract class SingleThreadEventExecutor implements Executor {
 
     /**
      * @Author: PP-jessica
-     * @Description:执行器执行任务
+     * @Description:执行器执行任务, 因为单线程既要负责注册事件，又要负责处理IO(Read)，不可能同时进行
+     *
+     * 因此，只要有任务到来，统一放入阻塞队列，先进先出，后期逐个取出执行
      */
     @Override
     public void execute(Runnable task) {

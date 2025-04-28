@@ -88,7 +88,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
             try {
                 //没有事件就阻塞在这里，回应NIO中得while(iterator.hasNext())
                 select();
-                //如果有事件,就处理就绪事件
+                //如果有事件,就处理就绪事件，初次执行processSelectedKeys肯定没有IO事件处理，因为还没有注册事件（异步注册，下面得runAllTasks才会最终注册事件）
                 processSelectedKeys();
             } catch (Exception e) {
                 e.printStackTrace();
