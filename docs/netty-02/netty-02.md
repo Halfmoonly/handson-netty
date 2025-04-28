@@ -479,11 +479,13 @@ private void select() throws IOException {
     }
 ```
 
-当然，接下来的一切就更加顺理成章了。执行完任务队列中的所有任务，新线程在 while 循环中又会来到 select方法内，但这次，selector 已经被 socketChannel 注册了，如果客户端已经向服务端发送了一条消息，就会检测到 IO 事件，即便任务队列中没有任务，也会跳出循环
+当然，接下来的一切就更加顺理成章了。执行完任务队列中的所有任务，新线程在 while 循环中又会来到 select方法内，
+
+但这次，selector 已经被 socketChannel 注册了，如果客户端已经向服务端发送了一条消息，就会检测到 IO 事件，即便任务队列中没有任务，也会跳出select()循环
 
 ### NIO逻辑processSelectedKeys
 
-接着向下执行到 processSelectedKeys(selector.selectedKeys()) 方法中。之后的代码我们已经写了很多次了吧，这次只不过对其封装了一下，换了个名字，核心一点也没有变。所以我们直接来到最后这一步。
+接着再次执行到 processSelectedKeys(selector.selectedKeys()) 方法中。之后的代码我们已经写了很多次了吧，这次只不过对其封装了一下，换了个名字，核心一点也没有变。所以我们直接来到最后这一步。
 
 ```java
 private void processSelectedKey(SelectionKey k) throws IOException {
@@ -508,6 +510,11 @@ private void processSelectedKey(SelectionKey k) throws IOException {
 
 终于新线程在第二次循环执行processSelectedKeys的时候，客户端发过来的Read消息就在这段代码中被接收了。
 
-接着新创建的线程又会去执行任务队列中的所有任务，但现在已无任务可执行，线程就又会来到 select 方法内。但这次任务队列中既没任务，也没 IO 事件到来，所以新创建的线程就会在 selector.select(3000) 阻塞住，当然，如果一直没有 IO 事件，那新的线程每过 3 秒就会看看任务队列中是否有任务，以此决定是否跳出循环。至此，我们的 SingleThreadEventExecutor 终于讲完了。
+接着新创建的线程又会去执行任务队列中的所有任务，但现在已无任务可执行，线程就又会来到 select 方法内。但这次任务队列中既没任务，也没 IO 事件到来，所以新创建的线程就会在 selector.select(3000) 阻塞住，当然，如果一直没有 IO 事件，那新的线程每过 3 秒就会看看任务队列中是否有任务 。至此，我们的 SingleThreadEventExecutor 终于讲完了。
 
-现在，让我们再梳理一下细节。**我们创建了一个单线程执行器，该执行器会管理一个线程，并且该执行器持有一个** **selector** **，当主线程接收到客户端的** **channel** **后，会把将 socketChannel 注册到 selector 封装成一个任务提交给单线程执行器。并且第一次提交任务的时候，单线程执行器内部的线程开始创建，然后单线程执行器开始工作。由此可见，一个执行器管理一个线程，并且持有一个 selector，** 这一点应该十分清楚了。
+现在，让我们再梳理一下细节。
+- 我们创建了一个单线程执行器，该执行器会管理一个线程，并且该执行器持有一个** selector
+- 当主线程接收到客户端的channel后，会把将 socketChannel 注册到 selector 封装成一个任务提交给单线程执行器，其实是到了阻塞队列因此后期异步注册。
+- 直到第一次提交任务函数流程的最后的最后，单线程执行器内部的线程开始创建，然后单线程执行器开始工作。
+
+- 由此可见，一个执行器管理一个线程，并且持有一个 selector， 这一点应该十分清楚了。
