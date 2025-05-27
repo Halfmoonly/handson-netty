@@ -1,6 +1,6 @@
 package com.pp.netty.util.concurrent;
 
-import com.pp.netty.channel.EventLoopTaskQueueFactory;
+import com.pp.netty.util.internal.ObjectUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -8,7 +8,7 @@ import java.util.Queue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 
@@ -16,8 +16,9 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  * @Author: PP-jessica
  * @Description:单线程执行器，实际上这个类就是一个单线程的线程池，netty中所有任务都是被该执行器执行的
  * 既然是执行器(虽然该执行器中只有一个无限循环的线程工作)，但执行器应该具备的属性也不可少，比如任务队列，拒绝策略等等
+ * 暂时让该类最为执行器的顶层类,在源码中该类还有两层继承的类
  */
-public abstract class SingleThreadEventExecutor implements Executor {
+public abstract class SingleThreadEventExecutor implements EventExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(SingleThreadEventExecutor.class);
     //执行器的初始状态，未启动
@@ -32,7 +33,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
             AtomicIntegerFieldUpdater.newUpdater(SingleThreadEventExecutor.class, "state");
 
     //任务队列的容量，默认是Integer的最大值
-    protected static final int DEFAULT_MAX_PENDING_TASKS = Integer.MAX_VALUE;
+    protected static final int DEFAULT_MAX_PENDING_EXECUTOR_TASKS = Integer.MAX_VALUE;
 
     private final Queue<Runnable> taskQueue;
 
@@ -40,20 +41,23 @@ public abstract class SingleThreadEventExecutor implements Executor {
     //创建线程的执行器
     private Executor executor;
 
+    private  EventExecutorGroup parent;
+
+    private  boolean addTaskWakesUp;
+
     private volatile boolean interrupted;
 
     private final RejectedExecutionHandler rejectedExecutionHandler;
 
-    protected SingleThreadEventExecutor(Executor executor, EventLoopTaskQueueFactory queueFactory, ThreadFactory threadFactory) {
-        this(executor,queueFactory,threadFactory,RejectedExecutionHandlers.reject());
-    }
-
-    protected SingleThreadEventExecutor(Executor executor,EventLoopTaskQueueFactory queueFactory,ThreadFactory threadFactory,RejectedExecutionHandler rejectedExecutionHandler) {
-        if (executor == null) {
-            this.executor = new ThreadPerTaskExecutor(threadFactory);
-        }
-        this.taskQueue = queueFactory == null? newTaskQueue(DEFAULT_MAX_PENDING_TASKS):queueFactory.newTaskQueue(DEFAULT_MAX_PENDING_TASKS);
-        this.rejectedExecutionHandler = rejectedExecutionHandler;
+    protected SingleThreadEventExecutor(EventExecutorGroup parent, Executor executor,
+                                        boolean addTaskWakesUp, Queue<Runnable> taskQueue,
+                                        RejectedExecutionHandler rejectedHandler) {
+        //暂时在这里赋值
+        this.parent = parent;
+        this.addTaskWakesUp = addTaskWakesUp;
+        this.executor = executor;
+        this.taskQueue = ObjectUtil.checkNotNull(taskQueue, "taskQueue");
+        rejectedExecutionHandler = ObjectUtil.checkNotNull(rejectedHandler, "rejectedHandler");
     }
 
 
@@ -69,9 +73,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
 
     /**
      * @Author: PP-jessica
-     * @Description:执行器执行任务, 因为单线程既要负责注册事件，又要负责处理IO(Read)，不可能同时进行
-     *
-     * 因此，只要有任务到来，统一放入阻塞队列，先进先出，后期逐个取出执行
+     * @Description:执行器执行任务
      */
     @Override
     public void execute(Runnable task) {
@@ -116,7 +118,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
                     thread.interrupt();
                 }
                 //线程开始轮询处理IO事件，父类中的关键字this代表的是子类对象，这里调用的是nioeventloop中的run方法
-                SingleThreadEventExecutor.this.run();//回应NIO中得轮询while(true)
+                SingleThreadEventExecutor.this.run();
                 logger.info("单线程执行器的线程错误结束了！");
             }
         });
@@ -126,6 +128,7 @@ public abstract class SingleThreadEventExecutor implements Executor {
      * @Author: PP-jessica
      * @Description:判断当前执行任务的线程是否是执行器的线程。这个方法至关重要，现在先有个印象
      */
+    @Override
     public boolean inEventLoop(Thread thread) {
         return thread == this.thread;
     }
@@ -209,4 +212,21 @@ public abstract class SingleThreadEventExecutor implements Executor {
             currentThread.interrupt();
         }
     }
+
+
+    @Override
+    public void shutdownGracefully() {
+
+    }
+
+    @Override
+    public boolean isTerminated() {
+        return false;
+    }
+
+    @Override
+    public void awaitTermination(Integer integer, TimeUnit timeUnit) throws InterruptedException{
+
+    }
+
 }

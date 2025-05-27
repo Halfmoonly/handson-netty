@@ -1,5 +1,6 @@
 package com.pp.netty.bootstrap;
 
+import com.pp.netty.channel.EventLoopGroup;
 import com.pp.netty.channel.nio.NioEventLoop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,12 +17,14 @@ public class Bootstrap {
 
     private SocketChannel socketChannel;
 
+    private EventLoopGroup workerGroup;
+
     public Bootstrap() {
 
     }
 
-    public Bootstrap nioEventLoop(NioEventLoop nioEventLoop) {
-        this.nioEventLoop = nioEventLoop;
+    public Bootstrap group(EventLoopGroup childGroup) {
+        this.workerGroup = childGroup;
         return this;
     }
 
@@ -40,9 +43,12 @@ public class Bootstrap {
     }
 
     private void doConnect(SocketAddress localAddress) {
-        //先注册事件并把轮询线程跑起来: 重载方法register(SocketChannel channel,NioEventLoop nioEventLoop)
-        nioEventLoop.register(socketChannel,this.nioEventLoop);
-        //客户端后绑定连接，这时候执行器的线程已经启动了
+        //获得单线程执行器
+        nioEventLoop = (NioEventLoop)workerGroup.next().next();
+        nioEventLoop.setSocketChannel(socketChannel);
+        //注册任务先提交
+        nioEventLoop.register(socketChannel,nioEventLoop);
+        //然后再提交连接服务器任务
         doConnect0(localAddress);
     }
 
@@ -52,6 +58,7 @@ public class Bootstrap {
             public void run() {
                 try {
                     socketChannel.connect(localAddress);
+                    logger.info("客户端channel连接服务器成功了");
                 } catch (Exception e) {
                     logger.error(e.getMessage());
                 }

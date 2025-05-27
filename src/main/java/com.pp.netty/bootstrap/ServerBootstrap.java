@@ -1,5 +1,6 @@
 package com.pp.netty.bootstrap;
 
+import com.pp.netty.channel.EventLoopGroup;
 import com.pp.netty.channel.nio.NioEventLoop;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,10 @@ public class ServerBootstrap {
 
     private static final Logger logger = LoggerFactory.getLogger(ServerBootstrap.class);
 
+    private EventLoopGroup bossGroup;
+
+    private EventLoopGroup workerGroup;
+
     private NioEventLoop nioEventLoop;
 
     private ServerSocketChannel serverSocketChannel;
@@ -20,8 +25,9 @@ public class ServerBootstrap {
 
     }
 
-    public ServerBootstrap nioEventLoop(NioEventLoop nioEventLoop) {
-        this.nioEventLoop = nioEventLoop;
+    public ServerBootstrap group(EventLoopGroup parentGroup, EventLoopGroup childGroup) {
+        this.bossGroup = parentGroup;
+        this.workerGroup = childGroup;
         return this;
     }
 
@@ -39,9 +45,13 @@ public class ServerBootstrap {
     }
 
     private void doBind(SocketAddress localAddress) {
-        //注册事件并把轮询线程跑起来: 重载方法register(ServerSocketChannel channel, NioEventLoop nioEventLoop)
-        nioEventLoop.register(serverSocketChannel,this.nioEventLoop);
-        //服务器后绑定端口，这时候执行器的线程已经启动了
+        //得到boss事件循环组中的事件执行器，也就是单线程执行器,这个里面其实就包含一个单线程执行器，在workergroup中才包含多个单线程执行器
+        //这里就暂时先写死了
+        nioEventLoop =(NioEventLoop)bossGroup.next().next();
+        nioEventLoop.setServerSocketChannel(serverSocketChannel);
+        nioEventLoop.setWorkerGroup(workerGroup);
+        //直接使用nioeventloop把服务端的channel注册到单线程执行器上
+        nioEventLoop.register(serverSocketChannel,nioEventLoop);
         doBind0(localAddress);
     }
 
@@ -56,7 +66,7 @@ public class ServerBootstrap {
             public void run() {
                 try {
                     serverSocketChannel.bind(localAddress);
-                    logger.info("服务端channel和端口号绑定了");
+                    logger.info("服务端channel绑定了服务器端口了");
                 } catch (Exception e) {
                     logger.error(e.getMessage());
                 }
