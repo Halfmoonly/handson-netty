@@ -5,7 +5,7 @@
 
 本仓库旨在手写netty框架，采用多分支开发，每个分支都是可运行的程度：
 - netty-01：带你回顾NIO的经典编程范式
-- netty-02：引入单线程池将服务端的connect事件和read事件分离，利用阻塞队列异步注册read事件，后期由新线程负责事件轮询，标准的Reactor线程模型
+- netty-02：引入单线程池将服务端的accept事件和read事件分离，利用阻塞队列异步注册read事件，后期由此单线程池负责事件轮询消费事件，标准的Reactor线程模型
 - netty-03：采用继承的方式重构了SingleThreadEventExecutor(顶层抽象类)，将NIO的事件轮询处理丢给NioEventLoop(核心实现)，将NIO的事件注册丢给SingleThreadEventLoop(中间层抽象类)，达到职责单一的目的
 - netty-04：原有的三层继承关系NioEventLoop->SingleThreadEventLoop->SingleThreadEventExecutor的基础上(NSS)，逐步构建出netty的核心框架结构
   - **NioEventLoop成组**：定义两个接口，EventLoopGroup接口组合了EventLoop接口，并且这两个接口还是继承关系EventLoop->EventLoopGroup
