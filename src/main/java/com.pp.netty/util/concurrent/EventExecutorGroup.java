@@ -13,14 +13,10 @@ public interface EventExecutorGroup extends Executor{
 
     /**
      * @Author: PP-jessica
-     * @Description:该方法暂不实现，后面会讲到
+     * @Description:下面这三个方法暂时不实现，源码中并不在本接口中，这里只是为了不报错，暂时放在这里
      */
     void shutdownGracefully();
 
-    /**
-     * @Author: PP-jessica
-     * @Description:下面这两个方法暂时不实现，源码中并不在本接口中，这里只是为了不报错，暂时放在这里
-     */
     boolean isTerminated();
 
     void awaitTermination(Integer integer, TimeUnit timeUnit) throws InterruptedException;

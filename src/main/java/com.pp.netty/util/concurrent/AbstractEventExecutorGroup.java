@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit;
  * 但方法内部的具体方法，由子类来实现
  */
 public abstract class AbstractEventExecutorGroup implements EventExecutorGroup {
-    //举个例子，该方法内部的next方法由MultithreadEventExecutorGroup类来实现，而submit方法，则由EventExecutor的实现类来实现
+    //举个例子，该方法内部的next方法由MultithreadEventExecutorGroup类来实现，而submit方法，则由eventloop的实现类来实现
 //    @Override
 //    public Future<?> submit(Runnable task) {
 //        return next().submit(task);

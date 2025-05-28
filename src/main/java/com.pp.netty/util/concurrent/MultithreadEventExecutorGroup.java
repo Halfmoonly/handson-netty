@@ -51,6 +51,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                     for (int j = 0; j < i; j ++) {
                         children[j].shutdownGracefully();
                     }
+
                     for (int j = 0; j < i; j ++) {
                         EventExecutor e = children[j];
                         try {
@@ -82,7 +83,6 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     public EventExecutor next() {
         return chooser.next();
     }
-
 
     @Override
     public void shutdownGracefully() {

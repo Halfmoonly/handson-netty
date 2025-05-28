@@ -138,7 +138,6 @@ public abstract class SingleThreadEventExecutor implements EventExecutor {
      * @Description:判断任务队列中是否有任务
      */
     protected boolean hasTasks() {
-        logger.info("我没任务了！");
         return !taskQueue.isEmpty();
     }
 
@@ -213,7 +212,6 @@ public abstract class SingleThreadEventExecutor implements EventExecutor {
         }
     }
 
-
     @Override
     public void shutdownGracefully() {
 
@@ -229,4 +227,27 @@ public abstract class SingleThreadEventExecutor implements EventExecutor {
 
     }
 
+    public Queue<Runnable> getTaskQueue() {
+        return taskQueue;
+    }
+
+    public Thread getThread() {
+        return thread;
+    }
+
+    public void setThread(Thread thread) {
+        this.thread = thread;
+    }
+
+    public Executor getExecutor() {
+        return executor;
+    }
+
+    public void setExecutor(Executor executor) {
+        this.executor = executor;
+    }
+
+    public RejectedExecutionHandler getRejectedExecutionHandler() {
+        return rejectedExecutionHandler;
+    }
 }

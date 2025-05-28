@@ -35,10 +35,6 @@ public class NioEventLoop extends SingleThreadEventLoop {
      */
     private EventLoopGroup workerGroup;
 
-    private static int index = 0;
-
-    private int id = 0;
-
     private  ServerSocketChannel serverSocketChannel;
 
     private  SocketChannel socketChannel;
@@ -63,9 +59,6 @@ public class NioEventLoop extends SingleThreadEventLoop {
         provider = selectorProvider;
         selector = openSecector();
         selectStrategy = strategy;
-        logger.info("我是"+ ++index+"nioeventloop");
-        id = index;
-        logger.info("work"+ id);
     }
 
     private static Queue<Runnable> newTaskQueue(
@@ -88,6 +81,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
         this.workerGroup = workerGroup;
     }
 
+    //得到用于轮询的选择器
     private Selector openSecector() {
         //未包装过的选择器
         final Selector unwrappedSelector;
@@ -130,8 +124,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
         //这里是一个死循环
         for (;;){
             //如果没有就绪事件，就在这里阻塞3秒
-            logger.info("我还不是netty，我要阻塞在这里3秒。当然，即便我是netty，我也会阻塞在这里");
-            int selectedKeys = selector.select(3000);
+            int selectedKeys = selector.select(1000);
             //如果有事件或者单线程执行器中有任务待执行，就退出循环
             if (selectedKeys != 0 || hasTasks()) {
                 break;
@@ -166,7 +159,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
      * @Author: PP-jessica
      * @Description:此时，应该也可以意识到，在不参考netty源码的情况下编写该方法，直接传入serverSocketChannel或者
      * socketChannel参数，每一次都要做几步判断，因为单线程的执行器是客户端和服务端通用的，所以你不知道传进来的参数究竟是
-     * 什么类型的channel，那么复杂的判断就必不可少了，代码也就变得丑陋。这种情况，实际上应该想到完美的解决方法了，
+     * 什么类型的channel，那么复杂的判断就必不可少了，代码也就变得丑陋。。这种情况，实际上应该想到完美的解决方法了，
      * 就是使用反射，传入Class，用工厂反射创建对象。netty中就是这么做的。
      */
     private void processSelectedKey(SelectionKey k) throws Exception {
@@ -196,11 +189,9 @@ public class NioEventLoop extends SingleThreadEventLoop {
             if (k.isAcceptable()) {
                 SocketChannel socketChannel = serverSocketChannel.accept();
                 socketChannel.configureBlocking(false);
-                //注册客户端的channel到多路复用器，这里的操作是由服务器的单线程执行器执行的，在netty源码中，这里注册
-                //客户端channel到多路复用器是由workGroup管理的线程执行器完成的。
+                //注册客户端的channel到多路复用器，这里的操作是由服务器的单线程执行器执行的。
                 NioEventLoop nioEventLoop = (NioEventLoop) workerGroup.next().next();
                 nioEventLoop.setServerSocketChannel(serverSocketChannel);
-                logger.info("+++++++++++++++++++++++++++++++++++++++++++要注册到第" + nioEventLoop.id +"work上！");
                 //work线程自己注册的channel到执行器
                 nioEventLoop.registerRead(socketChannel,nioEventLoop);
                 logger.info("客户端连接成功:{}",socketChannel.toString());

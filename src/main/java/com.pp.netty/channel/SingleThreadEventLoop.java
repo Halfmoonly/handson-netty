@@ -33,7 +33,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     /**
      * @Author: PP-jessica
-     * @Description:下面这两个方法会出现在这里，但并不是在这里实现的
+     * @Description:下面这两个方法并不是在这里实现的，写在这里也只是暂时的
      */
     @Override
     public EventLoopGroup parent() {
@@ -45,6 +45,10 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         return this;
     }
 
+    @Override
+    protected boolean hasTasks() {
+        return super.hasTasks();
+    }
 
     /**
      * @Author: PP-jessica
@@ -62,7 +66,6 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
                 @Override
                 public void run() {
                     register0(channel,nioEventLoop);
-                    logger.info("服务器的channel已注册到多路复用器上了！:{}",Thread.currentThread().getName());
                 }
             });
         }
@@ -71,7 +74,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
     public void registerRead(SocketChannel channel,NioEventLoop nioEventLoop) {
         //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
         if (nioEventLoop.inEventLoop(Thread.currentThread())) {
-            register00(channel,nioEventLoop);
+            register0(channel,nioEventLoop);
         }else {
             //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
             nioEventLoop.execute(new Runnable() {
@@ -86,7 +89,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     public void register(SocketChannel channel,NioEventLoop nioEventLoop) {
         //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
-        if (nioEventLoop.inEventLoop(Thread.currentThread())) {
+        if (inEventLoop(Thread.currentThread())) {
             register0(channel,nioEventLoop);
         }else {
             //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
@@ -94,12 +97,15 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
                 @Override
                 public void run() {
                     register0(channel,nioEventLoop);
-                    logger.info("客户端的channel已注册到workgroup多路复用器上了！:{}",Thread.currentThread().getName());
                 }
             });
         }
     }
 
+    /**
+     * @Author: PP-jessica
+     * @Description:该方法也要做重载
+     */
     private void register0(SocketChannel channel,NioEventLoop nioEventLoop) {
         try {
             channel.configureBlocking(false);
@@ -108,6 +114,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
             logger.error(e.getMessage());
         }
     }
+
     /**
      * @Author: PP-jessica
      * @Description:该方法也要做重载

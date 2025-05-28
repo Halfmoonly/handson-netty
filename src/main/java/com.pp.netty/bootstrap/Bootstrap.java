@@ -47,7 +47,7 @@ public class Bootstrap {
         nioEventLoop = (NioEventLoop)workerGroup.next().next();
         nioEventLoop.setSocketChannel(socketChannel);
         //注册任务先提交
-        nioEventLoop.register(socketChannel,nioEventLoop);
+        nioEventLoop.register(socketChannel,this.nioEventLoop);
         //然后再提交连接服务器任务
         doConnect0(localAddress);
     }
@@ -58,7 +58,7 @@ public class Bootstrap {
             public void run() {
                 try {
                     socketChannel.connect(localAddress);
-                    logger.info("客户端channel连接服务器成功了");
+                    System.out.println("客户端channel连接服务器成功了？");
                 } catch (Exception e) {
                     logger.error(e.getMessage());
                 }
