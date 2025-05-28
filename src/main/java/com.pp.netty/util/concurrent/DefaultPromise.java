@@ -14,6 +14,8 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
  * @Author: PP-jessica
  * @Description:promise的默认实现类，在netty中，这个可以看作一个不完整的futuretask，他们二者的区别在于futuretask可以作为一个任务
  * 被线程或线程池执行，不能手动设置结果。而该类则不能当做任务被线程或线程池执行，但可以手动把外部线程得到的结果赋值给result属性
+ * 那么netty中有没有类似futureTask的类呢？当然是有的，就是PromiseTask，该类继承了DefaultPromise类，可以当作任务被线程池或线程执行。
+ * 具体实现可以去看netty的源码，只要你理解了futureTask，会发现PromiseTask非常简单，大部分方法都是调用的父类方法。
  */
 public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
 
@@ -475,8 +477,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
             //如果没有通知，把notifyingListeners设置为ture
             notifyingListeners = true;
             listeners = this.listeners;
-            //将listeners属性设置为null，代表通知过了已经，这时候所就要被释放了，当有其他线程进入该代码块时，就不会进入if判断，而是
-            //直接进入for循环
+            //将listeners属性设置为null，代表通知过了已经，这时候所就要被释放了
             this.listeners = null;
         }
         for (;;) {
@@ -645,7 +646,6 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
         try {
             for (;;) {
                 synchronized (this) {
-                    //再次判断是否执行完成，防止出现竞争锁的时候，任务先完成了，而外部线程还没开始阻塞的情况
                     if (isDone()) {
                         return true;
                     }
@@ -666,11 +666,10 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
                         decWaiters();
                     }
                 }
-                //走到这里说明线程被唤醒了, 或者被提前唤醒了
+                //走到这里说明线程被唤醒了
                 if (isDone()) {
                     return true;
                 } else {
-                    //可能是虚假唤醒。
                     //得到新的等待时间，如果等待时间小于0，表示已经阻塞了用户设定的等待时间。如果waitTime大于0，则继续循环
                     waitTime = timeoutNanos - (System.nanoTime() - startTime);
                     if (waitTime <= 0) {
