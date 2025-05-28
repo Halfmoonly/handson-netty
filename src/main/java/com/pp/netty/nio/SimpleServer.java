@@ -48,8 +48,8 @@ public class SimpleServer {
                 //如果是连接事件
                 if (key.isAcceptable()) {
                     //得到服务端的channel,这里有两种方式获得服务端的channel，一种是直接获得,一种是通过attachment获得
-                    //因为之前把服务端channel注册到selector上时，同时把serverSocketChannel放进去了
                     ServerSocketChannel channel = (ServerSocketChannel)key.channel();
+                    //因为之前把服务端channel注册到selector上时，同时把serverSocketChannel放进去了, SelectionKey selectionKey = serverSocketChannel.register(selector, 0, serverSocketChannel);，所以可以通过attachment获得
                     //ServerSocketChannel attachment = (ServerSocketChannel)key.attachment();
                     //得到客户端的channel
                     SocketChannel socketChannel = channel.accept();
@@ -57,6 +57,7 @@ public class SimpleServer {
                     //接下来就要管理客户端的channel了，和服务端的channel的做法相同，客户端的channel也应该被注册到selector上
                     //通过一次次的轮询来接受并处理channel上的相关事件
                     //把客户端的channel注册到之前已经创建好的selector上
+                    //最终形成多个客户端channel对应一个服务端selector的效果
                     SelectionKey socketChannelKey = socketChannel.register(selector, 0, socketChannel);
                     //给客户端的channel设置可读事件
                     socketChannelKey.interestOps(SelectionKey.OP_READ);

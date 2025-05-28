@@ -34,4 +34,5 @@ build/
 .vscode/
 
 ./log-file/
-./service-logs
+./service-logs/
+./out/
