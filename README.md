@@ -14,7 +14,7 @@
   - **为了使EventLoopGroup接口拥有EventExecutorGroup接口的能力**，这两个接口也是继承关系EventLoopGroup->EventExecutorGroup，因此与NSS对称，成组这边形成了新的三层继承关系(NMM)是NioEventLoopGroup->MultithreadEventLoopGroup->MultithreadEventExecutorGroup
 - netty-05：Netty的异步回调，基于Future接口实现自己的Promise实现线程间通信，Promise和Future的区别如下：
   - 弥补了JDK.Future接口的缺陷，实现了事件监听器，同时监听器回调也是由异步线程(Netty单线程执行器)执行的
-  - 与Future不同，Promise并不作为具体的任务本身因为Netty有专门的单线程执行器，Promise它只用于获取结果和执行监听器，所以它不用继承Runnable接口，而是让用户自己设定 DefaultPromise 类中 result 成员变量的值
+  - 与Future不同，Promise并不作为具体的任务本身因为Netty有专门的单线程执行器，Promise它只用于获取结果和执行监听器，所以它不用继承Runnable接口，而是把 DefaultPromise 类中 result 成员变量结果的赋值权力交给用户
   - Future用的JUC中的LockSupport实现的内外部线程同步，Promise用的JVM的wait/notifyAll实现的内外部线程同步
 - 更多分支，持续更新中
 
