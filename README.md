@@ -16,9 +16,10 @@
   - 弥补了JDK.Future接口的缺陷，实现了事件监听器，同时监听器回调也是由异步线程(Netty单线程执行器)执行的
   - 与Future不同，Promise并不作为具体的任务本身因为Netty有专门的单线程执行器，Promise它只用于获取结果和执行监听器，所以它不用继承Runnable接口，而是把 DefaultPromise 类中 result 成员变量结果的赋值权力交给用户
   - Future用的JUC中的LockSupport实现的内外部线程同步，Promise用的JVM的wait/notifyAll实现的内外部线程同步
-- netty-06：正式引入Channel接口体系，和ReflectiveChannelFactory工厂，重构NioEventLoop和SingleThreadEventLoop。NioEventLoop不必判断事件来自于客户端serverSocketChannel或是服务端socketChannel，经Channel接口化处理之后NioEventLoop只负责处理感兴趣的事件即可
-  - channel和selector是多对一的关系。
-  - selector和executor是一对一的关系。
+- netty-06：SingleThreadEventLoop通过将channel作为附件的方式来注册客户端channel和服务端channel，方便了日后NioEventLoop通过key直接获得当前channel来读写操作，NioEventLoop不必持有成员变量serverSocketChannel和socketChannel。为此正式引入Channel接口体系，方法声明如下：
+  - register(EventLoop eventLoop)：一个 selector 可以注册多个 channel，因为服务端ServerSocketChannel会监听多个客户端SocketChannel。
+  - EventLoop eventLoop()：反过来一个channel只归属于一个selector，一个 selector 拥有一个单线程执行器executor ，无论是服务端还是客户端单线程执行器启动的那一刻，就会在 run 方法中无限循环，在 run 方法内，要不停判断该单线程执行器持有的 selector 是否有 IO 事件到来，如果有就执行 IO 事件。
+  - 最后还引入了channel的反射创建工厂ReflectiveChannelFactory
 - 更多分支，持续更新中
 
 main分支涵盖以上所有分支功能，全量文档见：[docs](docs)
