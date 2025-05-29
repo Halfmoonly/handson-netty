@@ -462,7 +462,9 @@ private void processSelectedKey(SelectionKey k) throws Exception {
 - 客户端：只会走if (k.isReadable())取出对方回发的数据
 - 服务端：接收到客户端连接成功的时候走if (k.isAcceptable())，之后客户端连接上了之后走if (k.isReadable())。并且走if (k.isAcceptable())的时候，还记得经典的NIO编程范式吗？服务端会在accept事件中回写客户端连接成功通知并注册客户端channel给到自己的selector并给客户端的channel设置可读事件
 
-可见客户端和服务端的read逻辑根本大不相同，因此抽象父类 AbstractNioChannel 中定义抽象方法 read()，有必要让不同的子类去重写，
+而且你看netty将服务端NioServerSocketChannel的isAcceptable逻辑和isReadable逻辑合并为一个方法read()了。 因此服务端的read()方法要比客户端的read()方法复杂的多
+
+可见netty中客户端和服务端的read()方法逻辑根本大不相同，因此抽象父类 AbstractNioChannel 中定义抽象方法 read()，有必要让不同的子类去重写，
 
 我们现在要做的，就是初步包装 Java 原生的 ServerSocketChannel 和 SocketChannel，让被包装过后的 channel 去实现各自的 read 方法。
 
