@@ -1,7 +1,6 @@
 package com.pp.netty.channel.nio;
 
 
-import com.pp.netty.channel.EventLoopGroup;
 import com.pp.netty.channel.EventLoopTaskQueueFactory;
 import com.pp.netty.channel.SelectStrategy;
 import com.pp.netty.channel.SingleThreadEventLoop;
@@ -10,11 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.nio.channels.CancelledKeyException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
 import java.nio.channels.spi.SelectorProvider;
 import java.util.Iterator;
 import java.util.Queue;
@@ -29,15 +26,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class NioEventLoop extends SingleThreadEventLoop {
 
     private static final Logger logger = LoggerFactory.getLogger(NioEventLoop.class);
-    /**
-     * @Author: PP-jessica
-     * @Description:这个属性是暂时的
-     */
-    private EventLoopGroup workerGroup;
-
-    private  ServerSocketChannel serverSocketChannel;
-
-    private  SocketChannel socketChannel;
 
     private final Selector selector;
 
@@ -67,18 +55,6 @@ public class NioEventLoop extends SingleThreadEventLoop {
             return new LinkedBlockingQueue<Runnable>(DEFAULT_MAX_PENDING_TASKS);
         }
         return queueFactory.newTaskQueue(DEFAULT_MAX_PENDING_TASKS);
-    }
-
-    public void setServerSocketChannel(ServerSocketChannel serverSocketChannel) {
-        this.serverSocketChannel = serverSocketChannel;
-    }
-
-    public void setSocketChannel(SocketChannel socketChannel) {
-        this.socketChannel = socketChannel;
-    }
-
-    public void setWorkerGroup(EventLoopGroup workerGroup) {
-        this.workerGroup = workerGroup;
     }
 
     //得到用于轮询的选择器
@@ -146,9 +122,13 @@ public class NioEventLoop extends SingleThreadEventLoop {
         Iterator<SelectionKey> i = selectedKeys.iterator();
         for (;;) {
             final SelectionKey k = i.next();
+            //还记得channel在注册时的第三个参数this吗？这里通过attachment方法就可以得到nio类的channel
+            final Object a = k.attachment();
             i.remove();
             //处理就绪事件
-            processSelectedKey(k);
+            if (a instanceof AbstractNioChannel) {
+                processSelectedKey(k,(AbstractNioChannel) a);
+            }
             if (!i.hasNext()) {
                 break;
             }
@@ -157,61 +137,38 @@ public class NioEventLoop extends SingleThreadEventLoop {
 
     /**
      * @Author: PP-jessica
-     * @Description:此时，应该也可以意识到，在不参考netty源码的情况下编写该方法，直接传入serverSocketChannel或者
-     * socketChannel参数，每一次都要做几步判断，因为单线程的执行器是客户端和服务端通用的，所以你不知道传进来的参数究竟是
-     * 什么类型的channel，那么复杂的判断就必不可少了，代码也就变得丑陋。。这种情况，实际上应该想到完美的解决方法了，
-     * 就是使用反射，传入Class，用工厂反射创建对象。netty中就是这么做的。
+     * @Description:既然都引入了channel，那么nioeventloop也可以和socketChannel，serverSocketChannel解耦了
+     * 这里要重写该方法，现在应该发现了，AbstractNioChannel作为抽象类，既可以调用服务端channel的方法，也可以调用客户端channel的
+     * 方法，这就巧妙的把客户端和服务端的channel与nioEventLoop解耦了
      */
-    private void processSelectedKey(SelectionKey k) throws Exception {
-        //说明传进来的是客户端channel，要处理客户端的事件
-        if (socketChannel != null) {
-            if (k.isConnectable()) {
-                //channel已经连接成功
-                if (socketChannel.finishConnect()) {
-                    //注册读事件
-                    socketChannel.register(selector,SelectionKey.OP_READ);
-                }
+    private void processSelectedKey(SelectionKey k,AbstractNioChannel ch) throws Exception {
+        try {
+            //得到key感兴趣的事件
+            int ops = k.interestOps();
+            //如果是连接事件
+            if (ops == SelectionKey.OP_CONNECT) {
+                //移除连接事件，否则会一直通知，这里实际上是做了个减法。位运算的门道，我们会放在之后和线程池的状态切换一起讲
+                //这里先了解就行
+                ops &= ~SelectionKey.OP_CONNECT;
+                //重新把感兴趣的事件注册一下
+                k.interestOps(ops);
+                //客户端注册读事件
+                ch.doBeginRead();
             }
-            //如果是读事件
-            if (k.isReadable()) {
-                ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
-                int len = socketChannel.read(byteBuffer);
-                byte[] buffer = new byte[len];
-                byteBuffer.flip();
-                byteBuffer.get(buffer);
-                logger.info("客户端收到消息:{}",new String(buffer));
+            //如果是读事件，不管是客户端还是服务端的，都可以直接调用read方法
+            //这时候一定要记清楚，NioSocketChannel和NioServerSocketChannel并不会纠缠
+            //用户创建的是哪个channel，这里抽象类调用就是它的方法
+            //如果不明白，那么就找到AbstractNioChannel的方法看一看，想一想，虽然那里传入的参数是this，但传入的并不是抽象类本身，想想你创建的
+            //是NioSocketChannel还是NioServerSocketChannel，是哪个，传入的就是哪个。只不过在这里被多态赋值给了抽象类
+            //创建的是子类对象，但在父类中调用了this，得到的仍然是子类对象
+            if (ops ==  SelectionKey.OP_READ) {
+                ch.read();
             }
-            return;
-        }
-        //运行到这里说明是服务端的channel
-        if (serverSocketChannel != null) {
-            //连接事件
-            if (k.isAcceptable()) {
-                SocketChannel socketChannel = serverSocketChannel.accept();
-                socketChannel.configureBlocking(false);
-                //注册客户端的channel到多路复用器，这里的操作是由服务器的单线程执行器执行的。
-                NioEventLoop nioEventLoop = (NioEventLoop) workerGroup.next().next();
-                nioEventLoop.setServerSocketChannel(serverSocketChannel);
-                //work线程自己注册的channel到执行器
-                nioEventLoop.registerRead(socketChannel,nioEventLoop);
-                logger.info("客户端连接成功:{}",socketChannel.toString());
-                socketChannel.write(ByteBuffer.wrap("我还不是netty，但我知道你上线了".getBytes()));
-                logger.info("服务器发送消息成功！");
+            if (ops == SelectionKey.OP_ACCEPT) {
+                ch.read();
             }
-            if (k.isReadable()) {
-                SocketChannel channel = (SocketChannel)k.channel();
-                ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
-                int len = channel.read(byteBuffer);
-                if (len == -1) {
-                    logger.info("客户端通道要关闭！");
-                    channel.close();
-                    return;
-                }
-                byte[] bytes = new byte[len];
-                byteBuffer.flip();
-                byteBuffer.get(bytes);
-                logger.info("收到客户端发送的数据:{}",new String(bytes));
-            }
+        } catch (CancelledKeyException ignored) {
+            throw new RuntimeException(ignored.getMessage());
         }
     }
 }

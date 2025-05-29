@@ -1,14 +1,11 @@
 package com.pp.netty.channel;
 
-import com.pp.netty.channel.nio.NioEventLoop;
 import com.pp.netty.util.concurrent.RejectedExecutionHandler;
 import com.pp.netty.util.concurrent.SingleThreadEventExecutor;
+import com.pp.netty.util.internal.ObjectUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.nio.channels.SelectionKey;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
 import java.util.Queue;
 import java.util.concurrent.Executor;
 
@@ -52,89 +49,23 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     /**
      * @Author: PP-jessica
-     * @Description:在这里把channel绑定到单线程执行器上,实际上就是把channel注册到执行器中的selector上，因为不知道
-     * 传入的参数是ServerSocketChannel还是SocketChannel，所以该方法要做重载，但在netty源码中则无必要。随着进度的更新，我们的代码
-     * 也会渐渐向netty靠拢
+     * @Description:因为没有和ServerSocketChannel，SocketChannel解耦，
+     * 这里原本是几个重载的注册方法。现在可以把这几个方法变成一个了
      */
-    public void register(ServerSocketChannel channel, NioEventLoop nioEventLoop) {
-        //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
-        if (inEventLoop(Thread.currentThread())) {
-            register0(channel,nioEventLoop);
-        }else {
-            //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
-            nioEventLoop.execute(new Runnable() {
-                @Override
-                public void run() {
-                    register0(channel,nioEventLoop);
-                }
-            });
-        }
-    }
-
-    public void registerRead(SocketChannel channel,NioEventLoop nioEventLoop) {
-        //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
-        if (nioEventLoop.inEventLoop(Thread.currentThread())) {
-            register00(channel,nioEventLoop);
-        }else {
-            //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
-            nioEventLoop.execute(new Runnable() {
-                @Override
-                public void run() {
-                    register00(channel,nioEventLoop);
-                    logger.info("客户端的channel已注册到workgroup多路复用器上了！:{}",Thread.currentThread().getName());
-                }
-            });
-        }
-    }
-
-    public void register(SocketChannel channel,NioEventLoop nioEventLoop) {
-        //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
-        if (inEventLoop(Thread.currentThread())) {
-            register0(channel,nioEventLoop);
-        }else {
-            //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
-            nioEventLoop.execute(new Runnable() {
-                @Override
-                public void run() {
-                    register0(channel,nioEventLoop);
-                }
-            });
-        }
+    @Override
+    public ChannelFuture register(Channel channel) {
+        //在这里可以发现在执行任务的时候，channel和promise也是绑定的
+        return register(new DefaultChannelPromise(channel, this));
     }
 
     /**
      * @Author: PP-jessica
-     * @Description:该方法也要做重载
+     * @Description:因为还没有引入unsafe类，所以该方法暂时先简化实现
      */
-    private void register0(SocketChannel channel,NioEventLoop nioEventLoop) {
-        try {
-            channel.configureBlocking(false);
-            channel.register(nioEventLoop.unwrappedSelector(), SelectionKey.OP_CONNECT);
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-        }
+    @Override
+    public ChannelFuture register(final ChannelPromise promise) {
+        ObjectUtil.checkNotNull(promise, "promise");
+        promise.channel().register(this, promise);
+        return promise;
     }
-
-    /**
-     * @Author: PP-jessica
-     * @Description:该方法也要做重载
-     */
-    private void register00(SocketChannel channel,NioEventLoop nioEventLoop) {
-        try {
-            channel.configureBlocking(false);
-            channel.register(nioEventLoop.unwrappedSelector(), SelectionKey.OP_READ);
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-        }
-    }
-
-    private void register0(ServerSocketChannel channel,NioEventLoop nioEventLoop) {
-        try {
-            channel.configureBlocking(false);
-            channel.register(nioEventLoop.unwrappedSelector(), SelectionKey.OP_ACCEPT);
-        } catch (Exception e) {
-            logger.error(e.getMessage());
-        }
-    }
-
 }

@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
  * @Author: PP-jessica
  * @Description:循环组的接口,暂时先不继承ScheduledExecutorService接口了
  */
-public interface EventExecutorGroup extends Executor{
+public interface EventExecutorGroup extends Executor {
 
     EventExecutor next();
 
