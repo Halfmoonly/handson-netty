@@ -152,7 +152,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
                 ops &= ~SelectionKey.OP_CONNECT;
                 //重新把感兴趣的事件注册一下
                 k.interestOps(ops);
-                //然后再注册客户端channel感兴趣的读事件
+                //客户端注册读事件
                 ch.doBeginRead();
             }
             //如果是读事件，不管是客户端还是服务端的，都可以直接调用read方法

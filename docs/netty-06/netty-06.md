@@ -421,4 +421,622 @@ private void register(Channel channel) {
 }
 ```
 
+不过，一定会有人困惑，为什么 register0 方法没有参数了？
 
+我们把 channel 注册到多路复用器上，最后执行的一定是 channel.register(nioEventLoop.unwrappedSelector(), SelectionKey.OP_CONNECT,channel) 这个 Java 原生的方法，
+
+那我们要注册的 channel 和 selector 该怎么得到呢？这就要进一步完善我们引入的 Channel 的体系了。
+
+## 引入 AbstractNioChannel 抽象类
+我们现在是引入了 Channel 接口和 AbstractChannel 抽象类。
+
+但在 Netty 中，AbstractChannel 抽象父类其实还要再继续细分。
+
+我记得之前提到过，Netty 中不只有 NIO 模式的 channel，还有 Epoll 模式的 channel，所以，实际上在 AbstractChannel 抽象父类之下，还有一个抽象子类 AbstractNioChannel，
+
+AbstractNioChannel 会和 AbstractEpollChannel 做区分，后者虽然也是 NIO 模式，但后者在特定的平台才能发挥作用。
+
+所以，我们自然也应该在我们的手写项目中引入一个抽象的 AbstractNioChannel 类，在这个类的基础上，来制定抽象方法，让不同的子类去实现。
+
+既然是这样，那我们可以继续分析一下，客户端和服务端的 channel 中，有哪些方法可以在抽象类 AbstractNioChannel 中定义成抽象的。
+
+比如，之前我们在 NioEventLoop 中看到的那两段冗长的代码，就是接收到 IO 事件之后，处理 IO 事件的具体逻辑。我们当时说要把那些碎代码封装成一个个方法。现在我想好封装成什么方法了。所以，对 NioEventLoop 这个类的关键代码做了一些改动。
+```java
+private void processSelectedKey(SelectionKey k) throws Exception {
+    //我们需要通过SelectionKey获得服务端的channel
+     if (k.isAcceptable()){
+         //仍然是通过多态赋值
+       AbstractNioChannel channel = key.attachment()
+        //具体的处理逻辑
+        channel.read();
+     }
+    if (k.isReadable()) {
+        AbstractNioChannel channel = key.attachment()
+         //具体的处理逻辑
+        channel.read();
+    }
+   
+}
+```
+上面这段代码的逻辑同时适用于客户端和服务端：
+- 客户端：只会走if (k.isReadable())取出对方回发的数据
+- 服务端：接收到客户端连接成功的时候走if (k.isAcceptable())，之后客户端连接上了之后走if (k.isReadable())。并且走if (k.isAcceptable())的时候，还记得经典的NIO编程范式吗？服务端会在accept事件中回写客户端连接成功通知并注册客户端channel给到自己的selector并给客户端的channel设置可读事件
+
+可见客户端和服务端的read逻辑根本大不相同，因此抽象父类 AbstractNioChannel 中定义抽象方法 read()，有必要让不同的子类去重写，
+
+我们现在要做的，就是初步包装 Java 原生的 ServerSocketChannel 和 SocketChannel，让被包装过后的 channel 去实现各自的 read 方法。
+
+既然客户端的 channel 主要是接收消息字节的，我们就把被包装过后的客户端 channel 称为 AbstractNioByteChannel，服务端是用来接收客户端连接的，就把它定义成 AbstractNioAcceptChannel。
+
+本来这样就挺完美的了，但很遗憾，在 Netty 中服务端 channel 并不是这个名字，而是 AbstractNioMessageChannel 这个名字，那我们索性也就用这个名字。
+- 客户端channel：AbstractNioByteChannel
+- 服务端channel：AbstractNioMessageChannel
+
+现在，让我们看看重构之后的程序，对抽象父类 AbstractChannel 稍作改动。
+```java
+public abstract class AbstractChannel implements Channel{
+
+     /**
+     * @Author: PP-jessica
+     * @Description:当创建的是客户端channel时，parent为serversocketchannel
+     * 如果创建的为服务端channel，parent则为null
+     */
+    private final Channel parent;
+
+    
+    /**
+     * @Author: PP-jessica
+     * @Description:每一个channel都要绑定到一个eventloop上
+     */
+    private volatile EventLoop eventLoop;
+
+    //这个就是得到channel绑定的单线程执行器的方法
+     @Override
+    public EventLoop eventLoop() {
+        EventLoop eventLoop = this.eventLoop;
+        if (eventLoop == null) {
+            throw new IllegalStateException("channel not registered to an event loop");
+        }
+        return eventLoop;
+    }
+
+
+     @Override
+    public final void register(EventLoop eventLoop) {
+        //在这里就把channel绑定的单线程执行器属性给赋值了
+        AbstractChannel.this.eventLoop = eventLoop;
+        //接下来就是之前写过的常规逻辑
+        if (eventLoop.inEventLoop(Thread.currentThread())) {
+            register0();
+        } else {
+             //如果调用该放的线程不是netty的线程，就封装成任务由线程执行器来执行
+                eventLoop.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        //为什么这里的register0方法可以不需要参数了？下面我们就会讲到
+                        register0();
+                    }
+                });
+        }
+    }
+
+    private void register0() {
+            //真正的注册方法
+            doRegister();
+            //在这里给channel注册感兴趣事件
+            beginRead();
+    }
+
+    //给channel注册感兴趣事件
+    public final void beginRead() {
+        doBeginRead();
+    }
+
+    
+
+    //在很多框架中，有一个规定，那就是真正干事的方法都是do开头的
+    protected void doRegister() throws Exception;
+
+    protected abstract void doBeginRead() throws Exception;
+}
+```
+定义一个抽象类 AbstractNioChannel，负责处理 NIO 模式下的数据。
+```java
+public abstract class AbstractNioChannel extends AbstractChannel {
+
+    //该抽象类是serversocketchannel和socketchannel的公共父类
+    private final SelectableChannel ch;
+
+    //channel要关注的事件
+    protected final int readInterestOp;
+
+    //channel注册到selector后返回的key
+    volatile SelectionKey selectionKey;
+
+    protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
+        super(parent);
+        this.ch = ch;
+        this.readInterestOp = readInterestOp;
+        try {
+            //设置服务端channel为非阻塞模式
+            ch.configureBlocking(false);
+        } catch (IOException e) {
+            try {
+                //有异常直接关闭channel
+                ch.close();
+            } catch (IOException e2) {
+                throw new RuntimeException(e2);
+            }
+            throw new RuntimeException("Failed to enter non-blocking mode.", e);
+        }
+    }
+
+    //返回java原生channel的方法
+    protected SelectableChannel javaChannel() {
+        return ch;
+    }
+
+    //得到channel绑定的单线程执行器，NioEventLoop就是一个单线程执行器，这个已经讲过了
+    @Override
+    public NioEventLoop eventLoop() {
+        return (NioEventLoop) super.eventLoop();
+    }
+
+    protected SelectionKey selectionKey() {
+        assert selectionKey != null;
+        return selectionKey;
+    }
+
+     //这里就为大家解决了为什么之前那个register0方法没有参数
+    //在下面这个方法中，javaChannel返回的是java的原生channel
+    //一个channel绑定一个单线程执行器，也就是NioEventLoop，而NioEventLoop恰好可以得到
+    //其内部的selector。调用父类的eventLoop()方法，就可以得到该channel绑定的NioEventLoop
+    @Override
+    protected void doRegister() throws Exception {
+        //在这里把channel注册到单线程执行器中的selector上，注意这里的第三个参数this，这意味着channel注册的时候，把自身，也就是nio类的channel
+        //当作附件放到key上了，之后会用到这个
+        selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
+    }
+
+    //给channel设置感兴趣的事件
+    @Override
+    protected void doBeginRead() throws Exception {
+        final SelectionKey selectionKey = this.selectionKey;
+        //检查key是否是有效的
+        if (!selectionKey.isValid()) {
+            return;
+        }
+        //还没有设置感兴趣的事件，所以得到的值为0
+        final int interestOps = selectionKey.interestOps();
+        //interestOps中并不包含readInterestOp
+        if ((interestOps & readInterestOp) == 0) {
+            //设置channel关注的事件，这里仍然是位运算做加减法
+            selectionKey.interestOps(interestOps | readInterestOp);
+        }
+    }
+
+   //抽象的read方法设置在这里
+    protected abstract void read();
+}
+```
+下面是被包装过后的服务端 AbstractNioMessageChannel，重写了父类AbstractNioChannel的read()方法和doReadMessages方法
+```java
+public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
+
+   //存放接收到的客户端连接的list
+    private final List<Object> readBuf = new ArrayList<Object>();
+
+    protected AbstractNioMessageChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
+        super(parent, ch, readInterestOp);
+    }
+
+    //实现的read方法，在该方法内接收客户端的连接
+    @Override
+    public void read() {
+        do {
+            //接收客户端的连接，存放在集合中
+            int localRead = doReadMessages(readBuf);
+            //返回值为0表示没有连接，直接退出即可
+            if (localRead == 0) {
+                break;
+            }
+            while (true);
+        }
+             int size = readBuf.size();
+            for (int i = 0; i < size; i ++) {
+                //把每一个客户端的channel注册到工作线程上，这里得不到workgroup
+                //所以我们不在这里实现了，打印一下即可
+                Channel child = (Channel) readBuf.get(i);
+                System.out.println(child+"收到客户端的channel了");
+                //TODO
+            }
+            //清除集合
+            readBuf.clear();
+        }
+     //真正接收客户端连接的方法，留给子类去实现
+    protected abstract int doReadMessages(List<Object> buf) throws Exception;
+}
+```
+接下来是被包装过后的客户端 AbstractNioByteChannel。
+```java
+public abstract class AbstractNioByteChannel extends AbstractNioChannel{
+
+    protected AbstractNioByteChannel(Channel parent, SelectableChannel ch) {
+        super(parent, ch, SelectionKey.OP_READ);
+    }
+
+    //实现的read方法
+    @Override
+    public final void read() {
+        //暂时用最原始的方法处理
+        ByteBuffer byteBuf = ByteBuffer.allocate(1024);
+        try {
+            doReadBytes(byteBuf);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    //真正读取消息的方法，留给子类去实现
+    protected abstract int doReadBytes(ByteBuffer buf) throws Exception;
+}
+```
+## 最终的客户端服务端实现类
+首先是服务端的 NioServerSocketChannel。
+```java
+/**
+ * @Author: PP-jessica
+ * @Description:对serversocketchannel做了一层包装，同时也因为channel接口和抽象类的引入，终于可以使NioEventLoop和channel解耦了
+ */
+public class NioServerSocketChannel extends AbstractNioMessageChannel {
+    //在无参构造器被调用的时候，该成员变量就被创建了
+    private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
+
+
+    private static ServerSocketChannel newSocket(SelectorProvider provider) {
+        try {
+            return provider.openServerSocketChannel();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to open a server socket.", e);
+        }
+    }
+
+    /**
+     * @Author: PP-jessica
+     * @Description:无参构造，当调用该构造器的时候，会调用到静态方法newSocket，返回一个ServerSocketChannel
+     */
+    public NioServerSocketChannel() {
+        this(newSocket(DEFAULT_SELECTOR_PROVIDER));
+    }
+
+    public NioServerSocketChannel(ServerSocketChannel channel) {
+        //创建的为NioServerSocketChannel时，没有父类channel，SelectionKey.OP_ACCEPT是服务端channel的关注事件
+        super(null, channel, SelectionKey.OP_ACCEPT);
+    }
+
+    /**
+     * @Author: PP-jessica
+     * @Description:该方法是服务端channel接收连接的方法
+     */
+    @Override
+    protected int doReadMessages(List<Object> buf) throws Exception {
+        //有连接进来，创建出java原生的客户端channel
+        SocketChannel ch = SocketUtils.accept(javaChannel());
+        try {
+            if (ch != null) {
+                //创建niosocketchannel
+                buf.add(new NioSocketChannel(this, ch));
+                return 1;
+            }
+        } catch (Throwable t) {
+           t.printStackTrace();
+            try {
+                //有异常则关闭客户端的channel
+                ch.close();
+            } catch (Throwable t2) {
+                throw new RuntimeException("Failed to close a socket.", t2);
+            }
+        }
+        return 0;
+    }
+}
+```
+接下来是客户端的 NioSocketChannel。
+```java
+/**
+ * @Author: PP-jessica
+ * @Description:对socketchannel做了一层包装，同时也因为channel接口和抽象类的引入，终于可以使NioEventLoop和channel解耦了
+ */
+public class NioSocketChannel extends AbstractNioByteChannel {
+    
+    private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
+
+
+    private static SocketChannel newSocket(SelectorProvider provider) {
+        try {
+            return provider.openSocketChannel();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to open a socket.", e);
+        }
+    }
+
+
+    /**
+     * @Author: PP-jessica
+     * @Description:无参构造器，netty客户端初始化的时候，channel工厂反射调用的就是这个构造器
+     */
+    public NioSocketChannel() {
+        this(DEFAULT_SELECTOR_PROVIDER);
+    }
+
+    public NioSocketChannel(SelectorProvider provider) {
+        this(newSocket(provider));
+    }
+
+    public NioSocketChannel(SocketChannel socket) {
+        this(null, socket);
+    }
+
+    public NioSocketChannel(Channel parent, SocketChannel socket) {
+        super(parent, socket);
+    }
+
+    //读取客户端消息的方法
+     @Override
+    protected int doReadBytes(ByteBuffer byteBuf) throws Exception {
+        int len = javaChannel().read(byteBuf);
+        byte[] buffer = new byte[len];
+        byteBuf.flip();
+        byteBuf.get(buffer);
+        System.out.println("客户端收到消息:{}"+new String(buffer));
+        //返回读取到的字节长度
+        return len;
+    }
+}
+```
+到这里，我们对 Channel 体系的完善和程序的重构也总算是完成了，下面，就让我们以服务端的启动作为例子，以这个例子看一看被包装过后的服务端 channel 在服务端启动过程中做了什么事。
+
+在创建测试类之前，我们还需要对另一处地方做一点改动，就是我们的服务端启动类 ServerBootstrap。代码如下：
+```java
+public class ServerBootstrap<C extends Channel> {
+    /**
+     * @Author: PP-jessica
+     * @Description:创建channel的反射工厂，从此之后，不必再让用户自己创建channel对象了，而是由反射工厂为我们创建
+     */
+    public ServerBootstrap channel(Class<? extends C> channelClass) {
+        this.channelFactory = new ReflectiveChannelFactory<C>(channelClass);
+        return this;
+    }
+
+    private ChannelFuture doBind(SocketAddress localAddress) {
+        //服务端的channel在这里初始化，然后注册到单线程执行器的selector上
+        final ChannelFuture regFuture = initAndRegister();
+        //后面其他流程就省略了
+        ......
+    }
+
+    final ChannelFuture initAndRegister() {
+        Channel channel = null;
+        //在这里初始化服务端channel，反射创建对象调用的无参构造器
+        //可以去NioServerSocketChannel类中看看无参构造器中做了什么
+        channel = channelFactory.newChannel();
+        //这里是异步注册的，一般来说，bossGroup设置的都是一个线程
+        ChannelFuture regFuture = bossGroup.next().register(channel);
+        return regFuture;
+    }
+}
+```
+
+## 梳理程序执行流程
+ReflectiveChannelFactory 和 ChannelFuture 的具体实现我就不再讲解了。现在，我们的关注重点就是眼下的这个 NioServerSocketChannel。下面就是我们创建的测试类：
+```java
+public class ServerTest {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        ServerBootstrap serverBootstrap = new ServerBootstrap();
+        NioEventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        NioEventLoopGroup workerGroup = new NioEventLoopGroup(2);
+       ChannelFuture channelFuture = serverBootstrap.
+                group(bossGroup,workerGroup).
+                channel(NioServerSocketChannel.class).
+                bind(8080).addListener(future -> System.out.println("我绑定成功了"));
+    }
+}
+```
+当我们启动这个测试类，程序执行到第 8 行的时候，就会通过 ServerBootstrap 中的 channel 方法，把要创建的 channel 类型传递到反射工厂中，这样反射工厂就知道要为用户创建什么类型的 channel 了。就像下面这样。
+```java
+public ServerBootstrap channel(Class<? extends C> channelClass) {
+        this.channelFactory = new ReflectiveChannelFactory<C>(channelClass);
+        return this;
+    }
+```
+```java
+public class ReflectiveChannelFactory<T extends Channel> implements ChannelFactory<T> {
+    //类的构造器
+    private final Constructor<? extends T> constructor;
+
+    public ReflectiveChannelFactory(Class<? extends T> clazz) {
+        //在这里构造器被赋值
+        this.constructor = clazz.getConstructor();
+    }
+
+    //反射创建对象的方法
+    public T newChannel() {
+       return constructor.newInstance(); 
+    }
+
+    //其他的省略
+    ......
+}
+```
+接着，程序就会来到 bind 方法内部，bind 方法又会一路调用到 doBind 方法内部，进而开始执行 initAndRegister 方法。这个方法从名字上就可以看出其功能，就是用来初始化 channel 并且将其注册到多路复用器上的。具体的逻辑如下。
+```java
+ final ChannelFuture initAndRegister() {
+        Channel channel = null;
+        //在这里初始化服务端channel，反射创建对象调用的无参构造器
+        //可以去NioServerSocketChannel类中看看无参构造器中做了什么
+        channel = channelFactory.newChannel();
+        //这里是异步注册的，一般来说，bossGroup设置的都是一个线程。
+        ChannelFuture regFuture = bossGroup.next().register(channel);
+        return regFuture;
+    }
+```
+在这个方法内，调用反射工厂的 newChannel 方法，创建了一个被包装过后的 NioServerSocketChannel，这个 channel 就是为服务端服务的。
+
+既然是反射创建了 channel，并且调用的是无参构造器，那我们就要看看在 NioServerSocketChannel 的无参构造器中有什么逻辑。所以，这时候我们的程序就会来到 NioServerSocketChannel 的无参构造器中。
+```java
+    //在无参构造器被调用的时候，该成员变量就被创建了
+    private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
+
+
+    private static ServerSocketChannel newSocket(SelectorProvider provider) {
+        try {
+            return provider.openServerSocketChannel();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to open a server socket.", e);
+        }
+    }
+
+    /**
+     * @Author: PP-jessica
+     * @Description:无参构造，当调用该构造器的时候，会调用到静态方法newSocket，返回一个ServerSocketChannel
+     */
+    public NioServerSocketChannel() {
+        this(newSocket(DEFAULT_SELECTOR_PROVIDER));
+    }
+
+    public NioServerSocketChannel(ServerSocketChannel channel) {
+        //创建的为NioServerSocketChannel时，没有父类channel，SelectionKey.OP_ACCEPT是服务端channel的关注事件
+        super(null, channel, SelectionKey.OP_ACCEPT);
+    }
+```
+在无参构造器方法被调用的过程中，该类的静态方法 newSocket 会帮用户创建一个 Java 原生的 ServerSocketChannel，并且和 SelectionKey.OP_ACCEPT 一起传入父类的构造器中。
+
+父类 AbstractNioMessageChannel 的构造器的逻辑就很简单，只是继续向父类 AbstractNioChannel 构造器传递参数而已，到了 AbstractNioChannel 类中，我们可以看到几个关键属性被赋值了。
+```java
+ //该抽象类是serversocketchannel和socketchannel的公共父类
+    private final SelectableChannel ch;
+
+    //channel要关注的事件
+    protected final int readInterestOp;
+
+        protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
+        super(parent);
+         //这里把java的原生channel赋值给该成员变量了
+        this.ch = ch;
+         //服务端channel感兴趣的时间也被赋值了
+        this.readInterestOp = readInterestOp;
+        //设置服务端channel为非阻塞模式
+        ch.configureBlocking(false);
+        }
+```
+
+到这里，initAndRegister 方法中的 channelFactory.newChannel() 这行代码的逻辑才算是走完了。
+
+接着就该执行 bossGroup.next().register(channel) 这行代码。bossGroup.next() 的逻辑就不再赘述了，之前都讲过了，我们直接看重构之后的 register(channel) 的逻辑。
+
+当执行 register(channel) 这行代码的时候，这是一个 NioEventLoop 在调用它自己的 register 方法，所以代码的最终逻辑就会来到 SingleThreadEventLoop 类中的 register 方法内。
+```java
+private void register(Channel channel) {
+        try {
+            //这里只需要调用Channel接口中的方法即可，反正接口的实现类中已经把方法实现了
+            //只要被本身传递进去就可以，这里的this，就是调用register方法哪个NioEventoop
+            channel.register(this);
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+        }
+    }
+```
+到了这里，我们的代码终于执行到 channel.register(this) 这行逻辑中了。这时候大家可别忘了，虽然 register 方法的形参是一个 Channel 接口，但我们的反射工厂创建的是 NioServerSocketChannel，所以该 channel 的所有父类中的方法，它都可以调用。
+
+因此，我们就来到了 AbstractChannel 抽象父类的 register 方法内，真正执行注册的是 register0 方法。
+
+但是在该类的 register0 方法内，是两个需要被重写的模版方法，doRegister 和 beginRead。
+```java
+ private void register0() {
+            //真正的注册方法
+            doRegister();
+            //在这里给channel注册读事件
+            beginRead();
+    }
+```
+
+先将 channel 注册到多路复用器上，然后设置 channel 感兴趣的事件。所以，我们的代码逻辑就会来到 AbstractNioChannel 中，在这个抽象类中，关键的属性都在它的构造函数中被赋值了
+- 所以我们 Java 原生的 channel 也可以得到了，用来执行真正的注册多路复用器方法。
+- 而 readInterestOp 也有值了，就可以在 doBeginRead 中给 channel 设置感兴趣的事件。
+
+```java
+public abstract class AbstractNioChannel extends AbstractChannel {
+
+    //该抽象类是serversocketchannel和socketchannel的公共父类
+    private final SelectableChannel ch;
+
+    //channel要关注的事件
+    protected final int readInterestOp;
+
+    //channel注册到selector后返回的key
+    volatile SelectionKey selectionKey;
+
+    protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
+        super(parent);
+        this.ch = ch;
+        this.readInterestOp = readInterestOp;
+        //设置服务端channel为非阻塞模式
+        ch.configureBlocking(false);
+        ......
+      
+    }
+
+    //返回java原生channel的方法
+    protected SelectableChannel javaChannel() {
+        return ch;
+    }
+
+    //得到channel绑定的单线程执行器，NioEventLoop就是一个单线程执行器，这个已经讲过了
+    @Override
+    public NioEventLoop eventLoop() {
+        return (NioEventLoop) super.eventLoop();
+    }
+
+    protected SelectionKey selectionKey() {
+        assert selectionKey != null;
+        return selectionKey;
+    }
+
+     //这里就为大家解决了为什么之前那个register0方法没有参数
+    //在下面这个方法中，javaChannel返回的是java的原生channel
+    //一个channel绑定一个单线程执行器，也就是NioEventLoop，而NioEventLoop恰好可以得到
+    //其内部的selector。调用父类的eventLoop()方法，就可以得到该channel绑定的NioEventLoop
+    @Override
+    protected void doRegister() throws Exception {
+        //在这里把channel注册到单线程执行器中的selector上,注意这里的第三个参数this，这意味着channel注册的时候把本身，也就是nio类的channel
+        //当作附件放到key上了，之后会用到这个。
+        selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
+    }
+
+    //给channel设置感兴趣的事件
+    @Override
+    protected void doBeginRead() throws Exception {
+        final SelectionKey selectionKey = this.selectionKey;
+        //检查key是否是有效的
+        if (!selectionKey.isValid()) {
+            return;
+        }
+        //还没有设置感兴趣的事件，所以得到的值为0
+        final int interestOps = selectionKey.interestOps();
+        //interestOps中并不包含readInterestOp
+        if ((interestOps & readInterestOp) == 0) {
+            //设置channel关注的事件，这里仍然是位运算做加减法
+            selectionKey.interestOps(interestOps | readInterestOp);
+        }
+    }
+
+   //抽象的read方法设置在这里
+    protected abstract void read();
+}
+```
+
+到此为止，initAndRegister 方法的关键逻辑就全分析完了，与客户端解耦的服务端 channel 具体是怎样工作的，我们也已经清楚了。如果继续往下分析，就可以分析当服务端 channel 有连接事件到来了，它的调用流程又是怎样的。不管是怎样，最后都会走到 NioServerSocketChannel 中执行真正的 doReadMessages 方法来接收客户端的连接。
+
+最后，为大家补上一张简图，梳理一下我们引入的这些 channel 的继承关系。
+
+![channel接口体系.png](channel%E6%8E%A5%E5%8F%A3%E4%BD%93%E7%B3%BB.png)
