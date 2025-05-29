@@ -6,6 +6,7 @@ import com.pp.netty.channel.nio.AbstractNioByteChannel;
 import com.pp.netty.util.internal.SocketUtils;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -28,7 +29,6 @@ public class NioSocketChannel extends AbstractNioByteChannel {
             throw new RuntimeException("Failed to open a socket.", e);
         }
     }
-
 
     /**
      * @Author: PP-jessica
@@ -62,6 +62,25 @@ public class NioSocketChannel extends AbstractNioByteChannel {
         return ch.isOpen() && ch.isConnected();
     }
 
+    @Override
+    public InetSocketAddress localAddress() {
+        return (InetSocketAddress) super.localAddress();
+    }
+
+    @Override
+    public InetSocketAddress remoteAddress() {
+        return (InetSocketAddress) super.remoteAddress();
+    }
+
+    @Override
+    protected SocketAddress localAddress0() {
+        return javaChannel().socket().getLocalSocketAddress();
+    }
+
+    @Override
+    protected SocketAddress remoteAddress0() {
+        return javaChannel().socket().getRemoteSocketAddress();
+    }
 
 
     @Override
@@ -90,7 +109,6 @@ public class NioSocketChannel extends AbstractNioByteChannel {
             //如果没有接收到服务端的ack就会返回false，但并不意味着该方法就彻底失败了，有可能ack在路上等等，最终需要注册连接事件来监听结果
             //这会让AbstractNioChannel类中的connect方法进入到添加定时任务的分支，如果超过设定的时间一直没有连接成功，就会在客户端报错
             //如果连接成功了，连接成功的时候会把该定时任务中的某些变量置为null,现在我们还没有加入定时任务
-            //这里会返回false
             boolean connected = SocketUtils.connect(javaChannel(), remoteAddress);
             if (!connected) {
                 selectionKey().interestOps(SelectionKey.OP_CONNECT);
@@ -105,6 +123,7 @@ public class NioSocketChannel extends AbstractNioByteChannel {
     }
 
 
+    @Override
     protected void doClose() throws Exception {
         javaChannel().close();
     }

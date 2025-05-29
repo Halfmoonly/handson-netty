@@ -6,6 +6,7 @@ import com.pp.netty.channel.nio.NioEventLoop;
 import com.pp.netty.util.internal.SocketUtils;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.ServerSocketChannel;
@@ -19,7 +20,6 @@ import java.util.List;
  */
 public class NioServerSocketChannel extends AbstractNioMessageChannel {
 
-    //在无参构造器被调用的时候，该成员变量就被创建了
     private static final SelectorProvider DEFAULT_SELECTOR_PROVIDER = SelectorProvider.provider();
 
 
@@ -45,8 +45,18 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel {
     }
 
     @Override
+    public InetSocketAddress localAddress() {
+        return (InetSocketAddress) super.localAddress();
+    }
+
+    @Override
     public boolean isActive() {
         return isOpen() && javaChannel().socket().isBound();
+    }
+
+    @Override
+    public InetSocketAddress remoteAddress() {
+        return null;
     }
 
     @Override
@@ -55,22 +65,19 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel {
     }
 
     @Override
-    public NioEventLoop eventLoop() {
-        return (NioEventLoop) super.eventLoop();
+    protected SocketAddress localAddress0() {
+        return SocketUtils.localSocketAddress(javaChannel().socket());
     }
 
-    /**
-     * @Author: PP-jessica
-     * @Description:这里做空实现即可，服务端的channel并不会做连接动作
-     */
     @Override
-    protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
-        throw new UnsupportedOperationException();
+    public NioEventLoop eventLoop() {
+        return (NioEventLoop) super.eventLoop();
     }
 
     @Override
     protected void doBind(SocketAddress localAddress) throws Exception {
         //这里是一个系统调用方法，判断当前的java版本是否为7以上，这里我就直接写死了，不引入更多的工具类了
+        //if (8 > 7) {
         //如果用户没有设置backlog参数，config.getBacklog()点进去看源码最后发现会该值会在NetUtil的静态代码块中被赋值，windows环境下值为200
         //linux环境下默认为128。Backlog可以设置全连接队列的大小，控制服务端接受连接的数量。
         //这里就直接写死了，还没有引入channelconfig配置类
@@ -84,10 +91,10 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel {
 //        }
     }
 
+    @Override
     protected void doClose() throws Exception {
         javaChannel().close();
     }
-
 
     /**
      * @Author: PP-jessica
@@ -104,7 +111,7 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel {
                 return 1;
             }
         } catch (Throwable t) {
-           t.printStackTrace();
+            t.printStackTrace();
             try {
                 //有异常则关闭客户端的channel
                 ch.close();
@@ -114,4 +121,19 @@ public class NioServerSocketChannel extends AbstractNioMessageChannel {
         }
         return 0;
     }
+
+    /**
+     * @Author: PP-jessica
+     * @Description:这里做空实现即可，服务端的channel并不会做连接动作
+     */
+    @Override
+    protected boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected SocketAddress remoteAddress0() {
+        return null;
+    }
+
 }

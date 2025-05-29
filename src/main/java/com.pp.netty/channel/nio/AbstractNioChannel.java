@@ -48,6 +48,11 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         return ch.isOpen();
     }
 
+    @Override
+    public NioUnsafe unsafe() {
+        return (NioUnsafe) super.unsafe();
+    }
+
     protected SelectableChannel javaChannel() {
         return ch;
     }
@@ -68,6 +73,55 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         return loop instanceof NioEventLoop;
     }
 
+
+    public interface NioUnsafe extends Unsafe {
+
+        SelectableChannel ch();
+
+        void finishConnect();
+
+        void read();
+
+        void forceFlush();
+    }
+
+    /**
+     * @Author: PP-jessica
+     * @Description:终于又引入了一个unsafe的抽象内部类
+     */
+    protected abstract class AbstractNioUnsafe extends AbstractUnsafe implements NioUnsafe {
+
+        @Override
+        public final SelectableChannel ch() {
+            return javaChannel();
+        }
+
+        /**
+         * @Author: PP-jessica
+         * @Description:该方法回到了原本的位置
+         */
+        @Override
+        public final void connect(final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+            try {
+                boolean doConnect = doConnect(remoteAddress, localAddress);
+                if (!doConnect) {
+                    promise.trySuccess();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        /**
+         * @Author: PP-jessica
+         * @Description:暂时不做实现
+         */
+        @Override
+        public final void finishConnect() {}
+
+        @Override
+        public final void forceFlush() {}
+    }
 
     @Override
     protected void doRegister() throws Exception {
@@ -93,31 +147,13 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         }
     }
 
-    /**
-     * @Author: PP-jessica
-     * @Description:由于还未引入unsafe类，所以该方法直接定义在这里，到这里其实也可以明白，高内聚低耦合，涉及到连接和读取数据
-     * 的工作都要由channel本身来完成
-     */
-    @Override
-    public final void connect(final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
-        try {
-            boolean doConnect = doConnect(remoteAddress, localAddress);
-            if (!doConnect) {
-                //这里的代码会搞出一个bug，我会在第六个版本的代码中修正，同时也会给大家讲一下bug是怎么产生的。这个bug只会在收发数据时
-                //体现出来，所以并不会影响我们本节课的测试。我们现在还没有开始收发数据
-                promise.trySuccess();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-    }
-
     protected abstract boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception;
 
     /**
      * @Author: PP-jessica
-     * @Description:该方法本来在该类的静态内部类AbstractNioUnsafe中，这里先定义在这里,定义成一个抽象方法
+     * @Description:该方法先不实现，在引入了channelHandler后会实现
      */
-    protected abstract void read();
+    @Override
+    protected void doClose() throws Exception {}
+
 }

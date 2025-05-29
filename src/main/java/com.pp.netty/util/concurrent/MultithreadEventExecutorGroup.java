@@ -85,13 +85,13 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
         return chooser.next();
     }
 
-
     @Override
     public void shutdownGracefully() {
         for (EventExecutor l: children) {
             l.shutdownGracefully();
         }
     }
+
 
     public final int executorCount() {
         return children.length;

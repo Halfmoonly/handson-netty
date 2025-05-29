@@ -32,12 +32,6 @@ public class Bootstrap<C extends Channel> {
         return this;
     }
 
-    /**
-     * @Author: PP-jessica
-     * @Description:这里本来还有一个同名方法，参数是SocketAddress类型的，可以去源码中看一下
-     * 这里我们删除了那个方法是因为那个方法创建的地址需要进一步解析，否则无法连接服务器，会引入更多不必要的类
-     * 所以我们就删除了，如果感兴趣，可以去源码中看一看，很明显的一个方法，就是第一个connect方法
-     */
     public ChannelFuture connect(String inetHost, int inetPort) {
         return connect(new InetSocketAddress(inetHost, inetPort));
     }

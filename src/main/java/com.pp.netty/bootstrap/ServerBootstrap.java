@@ -101,7 +101,7 @@ public class ServerBootstrap<C extends Channel> {
                 //在这里仍要判断一次服务端的channel是否注册成功
                 if (regFuture.isSuccess()) {
                     //注册成功之后开始绑定
-                    channel.bind(localAddress,promise);
+                    channel.bind(localAddress,promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
                     //走到这里说明没有注册成功，把异常赋值给promise
                     promise.setFailure(regFuture.cause());

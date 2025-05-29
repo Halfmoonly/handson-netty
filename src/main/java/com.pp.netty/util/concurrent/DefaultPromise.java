@@ -64,6 +64,7 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
     @Override
     public Promise<V> setSuccess(V result) {
         if (setSuccess0(result)) {
+            System.out.println("我等待了1s，终于绑定了服务器端口了");
             return this;
         }
         throw new IllegalStateException("complete already: " + this);
@@ -477,7 +478,8 @@ public class DefaultPromise<V> extends AbstractFuture<V> implements Promise<V> {
             //如果没有通知，把notifyingListeners设置为ture
             notifyingListeners = true;
             listeners = this.listeners;
-            //将listeners属性设置为null，代表通知过了已经，这时候所就要被释放了
+            //将listeners属性设置为null，代表通知过了已经，这时候所就要被释放了，当有其他线程进入该代码块时，就不会进入if判断，而是
+            //直接进入for循环
             this.listeners = null;
         }
         for (;;) {

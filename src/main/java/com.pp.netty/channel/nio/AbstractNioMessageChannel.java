@@ -14,15 +14,13 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
      */
     boolean inputShutdown;
 
-    /**
-     * @Author: PP-jessica
-     * @Description:存放服务端建立的客户端连接，该成员变量本来在NioMessageUnsafe静态内部类中
-     * 由于尚未引入该类，所以暂时写在这里
-     */
-    private final List<Object> readBuf = new ArrayList<Object>();
-
     protected AbstractNioMessageChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         super(parent, ch, readInterestOp);
+    }
+
+    @Override
+    protected AbstractNioUnsafe newUnsafe() {
+        return new NioMessageUnsafe();
     }
 
     @Override
@@ -33,19 +31,19 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
         super.doBeginRead();
     }
 
-    protected abstract int doReadMessages(List<Object> buf) throws Exception;
+    private final class NioMessageUnsafe extends AbstractNioUnsafe {
+        /**
+         * @Author: PP-jessica
+         * @Description:该属性也回到了正确的位置
+         */
+        private final List<Object> readBuf = new ArrayList<Object>();
 
-    /**
-     * @Author: PP-jessica
-     * @Description:由于还未引入unsafe类，所以该方法直接定义在这里，先不设定接口
-     * 该方法会接受客户端连接，并把连接注册到工作线程上
-     */
-    @Override
-    public void read() {
-        //该方法要在netty的线程执行器中执行
-        assert eventLoop().inEventLoop(Thread.currentThread());
-        boolean closed = false;
-        Throwable exception = null;
+        @Override
+        public void read() {
+            //该方法要在netty的线程执行器中执行
+            assert eventLoop().inEventLoop(Thread.currentThread());
+            boolean closed = false;
+            Throwable exception = null;
             try {
                 do {
                     //创建客户端的连接，存放在集合中
@@ -71,5 +69,9 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
             if (exception != null) {
                 throw new RuntimeException(exception);
             }
+        }
+
     }
+
+    protected abstract int doReadMessages(List<Object> buf) throws Exception;
 }

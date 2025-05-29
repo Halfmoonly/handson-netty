@@ -143,6 +143,8 @@ public class NioEventLoop extends SingleThreadEventLoop {
      */
     private void processSelectedKey(SelectionKey k,AbstractNioChannel ch) throws Exception {
         try {
+            //获取Unsafe类
+            final AbstractNioChannel.NioUnsafe unsafe = ch.unsafe();
             //得到key感兴趣的事件
             int ops = k.interestOps();
             //如果是连接事件
@@ -152,7 +154,7 @@ public class NioEventLoop extends SingleThreadEventLoop {
                 ops &= ~SelectionKey.OP_CONNECT;
                 //重新把感兴趣的事件注册一下
                 k.interestOps(ops);
-                //客户端注册读事件
+                //然后再注册客户端channel感兴趣的读事件
                 ch.doBeginRead();
             }
             //如果是读事件，不管是客户端还是服务端的，都可以直接调用read方法
@@ -162,10 +164,10 @@ public class NioEventLoop extends SingleThreadEventLoop {
             //是NioSocketChannel还是NioServerSocketChannel，是哪个，传入的就是哪个。只不过在这里被多态赋值给了抽象类
             //创建的是子类对象，但在父类中调用了this，得到的仍然是子类对象
             if (ops ==  SelectionKey.OP_READ) {
-                ch.read();
+                unsafe.read();
             }
             if (ops == SelectionKey.OP_ACCEPT) {
-                ch.read();
+                unsafe.read();
             }
         } catch (CancelledKeyException ignored) {
             throw new RuntimeException(ignored.getMessage());
