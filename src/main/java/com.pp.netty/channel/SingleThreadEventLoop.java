@@ -74,7 +74,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
     public void registerRead(SocketChannel channel,NioEventLoop nioEventLoop) {
         //如果执行该方法的线程就是执行器中的线程，直接执行方法即可
         if (nioEventLoop.inEventLoop(Thread.currentThread())) {
-            register0(channel,nioEventLoop);
+            register00(channel,nioEventLoop);
         }else {
             //在这里，第一次向单线程执行器中提交任务的时候，执行器终于开始执行了
             nioEventLoop.execute(new Runnable() {
