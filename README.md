@@ -26,6 +26,7 @@
   - **客户端NioSocketChannel和服务端NioServerSocketChannel的read行为不同**，因此客户端NioSocketChannel需要继承抽象类AbstractNioByteChannel实现特定的doReadBytes方法，服务端NioServerSocketChannel需要继承抽象类AbstractNioMessageChannel实现特定的doReadMessages方法
   - 抽象类AbstractNioByteChannel和AbstractNioMessageChannel均继承自AbstractNioChannel，AbstractNioChannel继承自顶级抽象类AbstractChannel
   - 最后还引入了channel的反射创建工厂ReflectiveChannelFactory给启动类使用
+- netty-07：引入Netty中的Unsafe接口，通过组合关系暂时放在抽象类AbstractChannel中，为的是让通过channel执行的IO方法必须提前经过ChannelPipeline过滤与校验，与JDK中的Unsafe无关
 - 更多分支，持续更新中
 
 main分支涵盖以上所有分支功能，全量文档见：[docs](docs)
